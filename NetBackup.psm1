@@ -4,7 +4,7 @@ function Connect-NBServer {
    param (
       [parameter(Mandatory = $true)]
       [ValidateNotNullOrEmpty()]
-      [string]$Server = "localhost",
+      [string]$Server,
       
       [parameter(Mandatory = $true, ParameterSetName = "Username")]
       [ValidateNotNullOrEmpty()]
