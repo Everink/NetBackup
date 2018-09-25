@@ -7,6 +7,7 @@ function Connect-NBServer {
    )
    
    begin {
+      Get-Service
    }
    
    process {
