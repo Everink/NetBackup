@@ -1,5 +1,5 @@
 
-function Connect-NBServer {
+function Connect-NBUserver {
    [CmdletBinding()]
    param (
       [parameter(Mandatory = $true)]
@@ -23,7 +23,11 @@ function Connect-NBServer {
    
    if ($PSCmdlet.ParameterSetName -eq "Credential") {
       $Username = $Credential.UserName
-      $Password = $Credential.GetNetworkCredential().Password
+      $JSONPassword = $Credential.GetNetworkCredential().Password 
+   }
+
+   if ($PSCmdlet.ParameterSetName -eq "Username") {
+      $JSONPassword = (New-Object System.Management.Automation.PSCredential("username", $Password)).GetNetworkCredential().Password
    }
 
    $Uri = "https://$($Server):$Port/netbackup/login"
@@ -32,17 +36,34 @@ function Connect-NBServer {
       "content-type" = "application/vnd.netbackup+json;version=1.0"
    }
 
-   $Body = @{
-      #"domainType" = "vx"                                     
-      #"domainName" = "mydomain"                               
-      "userName"   = $Username                               
-      "password"   = $Password
-   } | ConvertTo-Json 
+   if ($Username -like "*@*.*" ) {      
+      $preat = ($Username -split "@")[0]
+      $postat = ($Username -split "@")[1]
+      
+      $Body = @{
+         #"domainType" = "vx"                                     
+         "domainName" = ($postat -split "\.")[0]
+         "userName"   = $preat                               
+         "password"   = $JSONPassword
+      } | ConvertTo-Json
+   }
+   else {
+      $Body = @{
+         #"domainType" = "vx"                                     
+         #"domainName" = "mydomain"                               
+         "userName" = $Username                               
+         "password" = $JSONPassword
+      } | ConvertTo-Json 
+   }
    
+   $response = Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $Body -SkipCertificateCheck
    
-   Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $Body
-   
+   $Global:NBUconnection = "" | Select-Object -Property Server,Token,Username
+   $Global:NBUconnection.Server = $Server
+   $Global:NBUconnection.Token = $response.token
+   $Global:NBUconnection.Username = $Username
 
+   Write-Output $Global:NBUconnection
 }
 
 
