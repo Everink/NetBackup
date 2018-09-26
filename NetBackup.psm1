@@ -59,11 +59,112 @@ function Connect-NBUserver {
    $response = Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $Body -SkipCertificateCheck
    
    $Global:NBUconnection = "" | Select-Object -Property Server,Token,Username
-   $Global:NBUconnection.Server = $Server
+   $Global:NBUconnection.Server = "https://$($Server):$Port/netbackup"
    $Global:NBUconnection.Token = $response.token
    $Global:NBUconnection.Username = $Username
 
    Write-Output $Global:NBUconnection
 }
 
+
+function Test-NBUconnection {
+   [CmdletBinding()]
+   param (
+      [ValidateNotNullOrEmpty()]
+      [string]$Server = $Global:NBUconnection.Server,
+      
+      [int]$Port = 1556
+   )
+
+   $Uri = "https://$($Server):$Port/netbackup/ping"
+
+   Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck
+
+}
+
+
+function Get-NBUjob {
+   [CmdletBinding()]
+   param (
+      [int[]]$JobId
+   )
+   
+   begin {
+      $Headers = @{
+         "content-type"  = "application/vnd.netbackup+json;version=1.0"
+         "Authorization" = $Global:NBUconnection.Token
+      }
+
+     
+   }
+   process {
+      if ($JobId) {
+         foreach ($Job in $JobId) {            
+            $Uri = $Global:NBUconnection.Server + "/admin/jobs/$Job"            
+            Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+         }
+      }
+      else {
+         $Uri = $Global:NBUconnection.Server + "/admin/jobs"
+         Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+      }
+   }
+}
+
+function Get-NBUjobFileLists {
+   [CmdletBinding()]
+   param (
+      [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true)]
+      [ValidateNotNullOrEmpty()][int[]]$JobId      
+   )
+   
+   begin {
+      
+      $Headers = @{
+         "content-type"  = "application/vnd.netbackup+json;version=1.0"
+         "Authorization" = $Global:NBUconnection.Token
+      }
+   }
+   
+   process {
+      foreach ($Job in $JobId) {
+
+         $Uri = $Global:NBUconnection.Server + "/admin/jobs/$Job/file-lists"
+         
+         Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+      }
+   }
+   
+   end {
+   }
+}
+
+
+function Get-NBUjobTryLogs {
+   [CmdletBinding()]
+   param (
+      [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true)]
+      [ValidateNotNullOrEmpty()][int[]]$JobId      
+   )
+   
+   begin {
+      
+      $Headers = @{
+         "content-type"  = "application/vnd.netbackup+json;version=1.0"
+         "Authorization" = $Global:NBUconnection.Token
+      }
+   }
+   
+   process {
+      foreach ($Job in $JobId) {
+
+         $Uri = $Global:NBUconnection.Server + "/admin/jobs/$Job/try-logs"
+         
+         Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+      }
+   }
+   
+   end {
+   }
+}
 
