@@ -18,7 +18,9 @@ function Connect-NBUserver {
       [ValidateNotNullOrEmpty()]
       [Management.Automation.PSCredential]$Credential,
 
-      [int]$Port = 1556
+      [int]$Port = 1556,
+
+      [switch]$SkipCertificateCheck
    )
    
    if ($PSCmdlet.ParameterSetName -eq "Credential") {
@@ -56,9 +58,41 @@ function Connect-NBUserver {
       } | ConvertTo-Json 
    }
    
-   $response = Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $Body -SkipCertificateCheck
-   
-   $Global:NBUconnection = "" | Select-Object -Property Server,Token,Username
+   #enable tls versions
+   if ($PSVersionTable.PSVersion.Major -le 5) {
+      [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+   }
+
+   #Disable certificate check for trusted / expired cert
+   if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -le 5)) {
+      [System.Net.ServicePointManager]::ServerCertificateValidationCallback =
+      [System.Linq.Expressions.Expression]::Lambda(
+          [System.Net.Security.RemoteCertificateValidationCallback],
+          [System.Linq.Expressions.Expression]::Constant($true),
+          [System.Linq.Expressions.ParameterExpression[]](
+              [System.Linq.Expressions.Expression]::Parameter(
+                  [object], 'sender'),
+              [System.Linq.Expressions.Expression]::Parameter(
+                  [X509Certificate], 'certificate'),
+              [System.Linq.Expressions.Expression]::Parameter(
+                  [System.Security.Cryptography.X509Certificates.X509Chain], 'chain'),
+              [System.Linq.Expressions.Expression]::Parameter(
+                  [System.Net.Security.SslPolicyErrors], 'sslPolicyErrors'))).
+          Compile()      
+   }
+
+   if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+      $response = Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $Body -SkipCertificateCheck
+   }
+   if (!($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+      $response = Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $Body
+   }
+
+   if (($PSVersionTable.PSVersion.Major -le 5)) {
+      $response = Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $Body
+   }
+
+   $Global:NBUconnection = "" | Select-Object -Property Server, Token, Username
    $Global:NBUconnection.Server = "https://$($Server):$Port/netbackup"
    $Global:NBUconnection.Token = $response.token
    $Global:NBUconnection.Username = $Username
@@ -73,20 +107,30 @@ function Test-NBUconnection {
       [ValidateNotNullOrEmpty()]
       [string]$Server = $Global:NBUconnection.Server,
       
-      [int]$Port = 1556
+      [int]$Port = 1556,
+
+      [switch]$SkipCertificateCheck
    )
 
-   $Uri = "https://$($Server):$Port/netbackup/ping"
+   $Uri = $Server + "/ping"
+    if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+        Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck
+    }
+    if (!($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+        Invoke-RestMethod -Method GET -Uri $Uri
+    }
 
-   Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck
-
+    if (($PSVersionTable.PSVersion.Major -le 5)) {
+        Invoke-RestMethod -Method GET -Uri $Uri 
+    }
 }
 
 
 function Get-NBUjob {
    [CmdletBinding()]
    param (
-      [int[]]$JobId
+      [int[]]$JobId,
+      [switch]$SkipCertificateCheck
    )
    
    begin {
@@ -101,12 +145,24 @@ function Get-NBUjob {
       if ($JobId) {
          foreach ($Job in $JobId) {            
             $Uri = $Global:NBUconnection.Server + "/admin/jobs/$Job"            
-            Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+            
+            if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+               Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+            }
+            else {
+                Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+            }
          }
       }
       else {
          $Uri = $Global:NBUconnection.Server + "/admin/jobs"
-         Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+
+         if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+            Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+         }
+         else {
+            Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes 
+         }
       }
    }
 }
@@ -115,7 +171,8 @@ function Get-NBUjobFileLists {
    [CmdletBinding()]
    param (
       [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true)]
-      [ValidateNotNullOrEmpty()][int[]]$JobId      
+      [ValidateNotNullOrEmpty()][int[]]$JobId,
+      [switch]$SkipCertificateCheck
    )
    
    begin {
@@ -130,8 +187,12 @@ function Get-NBUjobFileLists {
       foreach ($Job in $JobId) {
 
          $Uri = $Global:NBUconnection.Server + "/admin/jobs/$Job/file-lists"
-         
-         Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+         if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+            Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+         }
+         else {
+            Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+         }
       }
    }
    
@@ -144,7 +205,8 @@ function Get-NBUjobTryLogs {
    [CmdletBinding()]
    param (
       [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true)]
-      [ValidateNotNullOrEmpty()][int[]]$JobId      
+      [ValidateNotNullOrEmpty()][int[]]$JobId,
+      [switch]$SkipCertificateCheck      
    )
    
    begin {
@@ -159,8 +221,12 @@ function Get-NBUjobTryLogs {
       foreach ($Job in $JobId) {
 
          $Uri = $Global:NBUconnection.Server + "/admin/jobs/$Job/try-logs"
-         
-         Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+         if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+            Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+         }
+         else {
+            Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+         }
       }
    }
    
