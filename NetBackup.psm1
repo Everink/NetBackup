@@ -1,4 +1,43 @@
 
+
+<#
+.SYNOPSIS
+Connect to a specified NetBackup Server.
+
+.DESCRIPTION
+Connect to a NetBackup server and retrieve a token for other NetBackup commands.
+
+.PARAMETER Server
+Specifies the NetBackup masterserver
+
+.PARAMETER Username
+Specifies the username to use to connect to the server. Use either username or a credential object.
+
+.PARAMETER Password
+The password, needs to be securestring object. if connecting with a username you will be asked to supply the password
+
+.PARAMETER Credential
+The credential object to authenticate to the NetBackup server.
+
+.PARAMETER Port
+The port to connect to, default is 1556, the PBX port.
+
+.PARAMETER SkipCredentialCheck
+To skip checking for self-signed certs or other invalid certs.
+
+.INPUTS
+None. You cannot pipe objects to Add-Extension.
+
+.OUTPUTS
+Outsputs a global variable NBUconnection
+
+.EXAMPLE
+C:\PS> Connect-NbuServer -Server netbackup.domain.com -SkipCredentialCheck
+
+.EXAMPLE
+C:\PS> Connect-NbuServer -Server netback.domain.com
+
+#>
 function Connect-NbuServer {
    [CmdletBinding()]
    param (
@@ -101,6 +140,33 @@ function Connect-NbuServer {
 }
 
 
+<#
+.SYNOPSIS
+Tests the connection to the gateway service from the client and returns the master server time in milliseconds.
+
+.DESCRIPTION
+Tests the connection to the gateway service from the client and returns the master server time in milliseconds.
+
+.PARAMETER Server
+Specifies the NetBackup masterserver. tries to use the global variable: Global:NBUConnection.Server
+
+.PARAMETER Port
+The port to connect to, default is 1556, the PBX port.
+
+.PARAMETER SkipCredentialCheck
+To skip checking for self-signed certs or other invalid certs, only used for PowerShell version 6.x
+
+.INPUTS
+None. You cannot pipe objects to Add-Extension.
+
+.OUTPUTS
+NetBackup masterserver time in milliseconds
+
+.EXAMPLE
+C:\PS> Test-NbuConnection
+1538133805320
+
+#>
 function Test-NbuConnection {
    [CmdletBinding()]
    param (
@@ -126,6 +192,48 @@ function Test-NbuConnection {
 }
 
 
+
+<#
+.SYNOPSIS
+Gets the list of jobs based on specified filters.
+
+.DESCRIPTION
+Gets the list of jobs based on specified filters.
+
+.PARAMETER JobId
+Gets the netbackup job based on the JobId(s)
+
+.PARAMETER Filter
+Specifies filters according to OData standards
+
+.PARAMETER SkipCredentialCheck
+To skip checking for self-signed certs or other invalid certs, only used for PowerShell version 6.x
+
+.PARAMETER Limit
+Ammount of jobs to return. Default value is 100
+
+.INPUTS
+None. You cannot pipe objects to Add-Extension.
+
+.OUTPUTS
+Netbackup.Jobs object
+
+.EXAMPLE
+C:\PS> Get-NbuJob -JobId "2","3"
+Returns netback jobs with a jobId of 2 or 3
+
+.EXAMPLE
+C:\PS> Get-NbuJob -Filter "state eq 'DONE'" -SkipCertificateCheck
+Returns netbackup jobs with a state of DONE
+
+.EXAMPLE
+C:\PS> Get-NbuJob -Filter "status ne 0"  -SkipCertificateCheck
+Returns netbackup jobs with a status not equal to 0
+
+.EXAMPLE
+C:\PS> Get-NbuJob -Filter "clientName eq 'server.domain.com'" -Limit 20
+Returns maximum of 20 netbackup jobs from which the client is equal to server.domain.com
+#>
 function Get-NbuJob {
    [CmdletBinding(DefaultParameterSetName = "default")]
    param (
@@ -155,8 +263,7 @@ function Get-NbuJob {
 
       
       $Body = @{
-         "page[limit]" = $Limit                   # This changes the default page size
-        
+         "page[limit]" = $Limit                   # This changes the default page size        
       }
       if ($Filter) {
          $Body.Add("filter", $Filter)
@@ -188,7 +295,9 @@ function Get-NbuJob {
             [PScustomObject]$resp = Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers -Body $Body | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes 
          }
       }
-      $resp | Add-Member -TypeName NetBackup.Jobs -PassThru
+      if ($resp) {
+         $resp | Add-Member -TypeName NetBackup.Jobs -PassThru
+      }
    }
 }
 
@@ -259,10 +368,57 @@ function Get-NbuJobTryLogs {
    }
 }
 
+
+
+<#
+.SYNOPSIS
+Get the list of images based on specified filters.
+
+.DESCRIPTION
+Get the list of images based on specified filters.
+If no filters are specified, information for the last 100 images made within the last 24 hours is returned
+
+.PARAMETER backupId
+Gets the netbackup job based on the backupId(s)
+
+.PARAMETER Filter
+Specifies filters according to OData standards
+
+.PARAMETER SkipCredentialCheck
+To skip checking for self-signed certs or other invalid certs, only used for PowerShell version 6.x
+
+.PARAMETER Limit
+Ammount of jobs to return. Default value is 100
+
+.INPUTS
+Accepts pipeline input byproperty backupId
+
+.OUTPUTS
+List of catalog images
+
+.EXAMPLE
+C:\PS> Get-NbuCatalogImage -BackupId "server.domain.com_1537968156","server2.domain.com_1538110836"
+Returns catalog images by backupId
+
+.EXAMPLE
+C:\PS> Get-NbuJob -JobId 2,3 | Get-NbuCatalogImage
+Returns catalog images based on the backupId of netbackupJobs with JobId 2 and 3
+
+.EXAMPLE
+C:\PS> Get-NbuCatalogImage -Filter "clientName eq 'server.domain.com' and policyName eq 'FS_WIN_test'" -Limit 5
+Returns a maximum of 5 catalog images where clientname is equal to server.domain.com AND policyname is equal to FS_WIN_test
+
+.EXAMPLE
+C:\PS>  Get-NBUjob -Filter "status eq 0" | Where-Object {$_.backupId -ne ""} | Get-NbuCatalogImage
+Returns the catalog images from all netbackup jobs that were succesfull, and have a backupId
+This will exclude jobs like image cleanups, since they have no backup ID
+#>
 function Get-NbuCatalogImage {
    [CmdletBinding(DefaultParameterSetName = "default")]
    param (
-      [parameter(ParameterSetName = "backupId",ValueFromPipelineByPropertyName=$true)][string[]]$BackupId,
+      [parameter(ParameterSetName = "backupId", ValueFromPipelineByPropertyName = $true)] 
+      [ValidateNotNullOrEmpty()]     
+      [string[]]$BackupId,
       # Parameter help description
       [Parameter(ParameterSetName = "filter")][string]$Filter,      
     
@@ -270,7 +426,7 @@ function Get-NbuCatalogImage {
       
       [int]$Limit = 100,
       
-      [Parameter(ParameterSetName="default")][switch]$All 
+      [Parameter(ParameterSetName = "default")][switch]$All 
 
    )
 
@@ -285,29 +441,37 @@ function Get-NbuCatalogImage {
          "page[limit]" = $Limit                   # This changes the default page size
          
       }
-      if ($Filter){
-          $Body.Add("filter", $Filter)
+      if ($Filter) {
+         $Body.Add("filter", $Filter)
       }
 
-      [array]$resp = @()
+      
 
 
    }
     
-   process {
-      if ($BackupId) {
+   process {      
+      if ($PSCmdlet.ParameterSetName -eq "backupId") {         
+         Write-Verbose "BackupId found: $backupId... processing foreach in case of array by parameter input"
          foreach ($Id in $BackupId) {            
-            $Uri = $Global:NBUconnection.Server + "/catalog/images/$Id"            
-          
-            if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
-               [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers -Body $Body
-            }
+            Write-Verbose "Inside foreach loop. processing backupId: $Id"
+            if ($Id -eq "") {Write-Verbose "BackupId empty, try filtering these out. skipping this"}
             else {
-               [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers -Body $Body
+               $Uri = $Global:NBUconnection.Server + "/catalog/images/$Id"            
+          
+               if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+                  [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers -Body $Body
+               }
+               else {
+                  [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers -Body $Body
+               }
             }
+
+
          }
-      }
+      }      
       else {
+         Write-Verbose "NOT parameterset backupId"
          $Uri = $Global:NBUconnection.Server + "/catalog/images"
 
          if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
@@ -333,5 +497,39 @@ function Get-NbuCatalogImage {
 
 }
 
+function Get-NbuVMwareCatalogImage {
+   [CmdletBinding()]
+   param (
+      [Parameter(ValueFromPipelineByPropertyName = $true)][string[]]$backupId        
+   )
+    
+   begin {
+      $Headers = @{
+         "content-type"  = "application/vnd.netbackup+json;version=1.0"
+         "Authorization" = $Global:NBUconnection.Token
+      }
+      [array]$resp = @()
+   }
+    
+   process {
+       
+      foreach ($Id in $BackupId) {            
+         $Uri = $Global:NBUconnection.Server + "/catalog/vmware-images/$Id"            
+      
+         if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+            [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers
+         }
+         else {
+            [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers
+         }
+      }
+       
+   }
+
+    
+   end {
+       $resp
+   }
+}
 
 
