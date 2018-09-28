@@ -1,5 +1,5 @@
 
-function Connect-NBUserver {
+function Connect-NbuServer {
    [CmdletBinding()]
    param (
       [parameter(Mandatory = $true)]
@@ -101,7 +101,7 @@ function Connect-NBUserver {
 }
 
 
-function Test-NBUconnection {
+function Test-NbuConnection {
    [CmdletBinding()]
    param (
       [ValidateNotNullOrEmpty()]
@@ -126,11 +126,25 @@ function Test-NBUconnection {
 }
 
 
-function Get-NBUjob {
-   [CmdletBinding()]
+function Get-NbuJob {
+   [CmdletBinding(DefaultParameterSetName = "default")]
    param (
+      
+      [Parameter(ParameterSetName = "Id", Mandatory = $false)]
       [int[]]$JobId,
-      [switch]$SkipCertificateCheck
+
+      
+      [Parameter(ParameterSetName = "filter", Mandatory = $false)]
+      [string]$Filter,
+
+      [switch]$SkipCertificateCheck,
+      
+      [int]$Limit = 100,
+
+      [Parameter(ParameterSetName = "default")][switch]$All 
+
+
+      
    )
    
    begin {
@@ -138,6 +152,16 @@ function Get-NBUjob {
          "content-type"  = "application/vnd.netbackup+json;version=1.0"
          "Authorization" = $Global:NBUconnection.Token
       }
+
+      
+      $Body = @{
+         "page[limit]" = $Limit                   # This changes the default page size
+        
+      }
+      if ($Filter) {
+         $Body.Add("filter", $Filter)
+      }
+
 
      
    }
@@ -147,10 +171,10 @@ function Get-NBUjob {
             $Uri = $Global:NBUconnection.Server + "/admin/jobs/$Job"            
             
             if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
-               Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+               [PScustomObject]$resp = Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers -Body $Body | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
             }
             else {
-                Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+               [PScustomObject]$resp = Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers -Body $Body | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
             }
          }
       }
@@ -158,16 +182,17 @@ function Get-NBUjob {
          $Uri = $Global:NBUconnection.Server + "/admin/jobs"
 
          if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
-            Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
+            [PScustomObject]$resp = Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers -Body $Body | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes
          }
          else {
-            Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes 
+            [PScustomObject]$resp = Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers -Body $Body | Select-Object -ExpandProperty data | Select-Object -ExpandProperty attributes 
          }
       }
+      $resp | Add-Member -TypeName NetBackup.Jobs -PassThru
    }
 }
 
-function Get-NBUjobFileLists {
+function Get-NbuJobFileLists {
    [CmdletBinding()]
    param (
       [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true)]
@@ -201,7 +226,7 @@ function Get-NBUjobFileLists {
 }
 
 
-function Get-NBUjobTryLogs {
+function Get-NbuJobTryLogs {
    [CmdletBinding()]
    param (
       [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true)]
@@ -233,4 +258,80 @@ function Get-NBUjobTryLogs {
    end {
    }
 }
+
+function Get-NbuCatalogImage {
+   [CmdletBinding(DefaultParameterSetName = "default")]
+   param (
+      [parameter(ParameterSetName = "backupId",ValueFromPipelineByPropertyName=$true)][string[]]$BackupId,
+      # Parameter help description
+      [Parameter(ParameterSetName = "filter")][string]$Filter,      
+    
+      [switch]$SkipCertificateCheck,      
+      
+      [int]$Limit = 100,
+      
+      [Parameter(ParameterSetName="default")][switch]$All 
+
+   )
+
+    
+   begin {
+      $Headers = @{
+         "content-type"  = "application/vnd.netbackup+json;version=1.0"
+         "Authorization" = $Global:NBUconnection.Token
+      }
+
+      $Body = @{
+         "page[limit]" = $Limit                   # This changes the default page size
+         
+      }
+      if ($Filter){
+          $Body.Add("filter", $Filter)
+      }
+
+      [array]$resp = @()
+
+
+   }
+    
+   process {
+      if ($BackupId) {
+         foreach ($Id in $BackupId) {            
+            $Uri = $Global:NBUconnection.Server + "/catalog/images/$Id"            
+          
+            if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+               [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers -Body $Body
+            }
+            else {
+               [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers -Body $Body
+            }
+         }
+      }
+      else {
+         $Uri = $Global:NBUconnection.Server + "/catalog/images"
+
+         if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+            [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck -Headers $Headers -Body $Body
+         }
+         else {
+            [array]$resp += Invoke-RestMethod -Method GET -Uri $Uri -Headers $Headers -Body $Body
+         }
+      }
+       
+   }
+
+   end {
+      [array]$collection = $resp.data.attributes
+
+      for ($i = 0; $i -le ($collection.Count - 1); $i++) { 
+         $collection[$i] | Add-Member -MemberType NoteProperty -Name "backupId" -Value $resp.data.id[$i]
+      }
+    
+      $collection
+
+   }
+
+}
+
+
 
