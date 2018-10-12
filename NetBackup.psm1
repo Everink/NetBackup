@@ -106,18 +106,18 @@ function Connect-NbuServer {
    if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -le 5)) {
       [System.Net.ServicePointManager]::ServerCertificateValidationCallback =
       [System.Linq.Expressions.Expression]::Lambda(
-          [System.Net.Security.RemoteCertificateValidationCallback],
-          [System.Linq.Expressions.Expression]::Constant($true),
-          [System.Linq.Expressions.ParameterExpression[]](
-              [System.Linq.Expressions.Expression]::Parameter(
-                  [object], 'sender'),
-              [System.Linq.Expressions.Expression]::Parameter(
-                  [X509Certificate], 'certificate'),
-              [System.Linq.Expressions.Expression]::Parameter(
-                  [System.Security.Cryptography.X509Certificates.X509Chain], 'chain'),
-              [System.Linq.Expressions.Expression]::Parameter(
-                  [System.Net.Security.SslPolicyErrors], 'sslPolicyErrors'))).
-          Compile()      
+         [System.Net.Security.RemoteCertificateValidationCallback],
+         [System.Linq.Expressions.Expression]::Constant($true),
+         [System.Linq.Expressions.ParameterExpression[]](
+            [System.Linq.Expressions.Expression]::Parameter(
+               [object], 'sender'),
+            [System.Linq.Expressions.Expression]::Parameter(
+               [X509Certificate], 'certificate'),
+            [System.Linq.Expressions.Expression]::Parameter(
+               [System.Security.Cryptography.X509Certificates.X509Chain], 'chain'),
+            [System.Linq.Expressions.Expression]::Parameter(
+               [System.Net.Security.SslPolicyErrors], 'sslPolicyErrors'))).
+      Compile()      
    }
 
    if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
@@ -179,16 +179,16 @@ function Test-NbuConnection {
    )
 
    $Uri = $Server + "/ping"
-    if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
-        Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck
-    }
-    if (!($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
-        Invoke-RestMethod -Method GET -Uri $Uri
-    }
+   if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+      Invoke-RestMethod -Method GET -Uri $Uri -SkipCertificateCheck
+   }
+   if (!($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+      Invoke-RestMethod -Method GET -Uri $Uri
+   }
 
-    if (($PSVersionTable.PSVersion.Major -le 5)) {
-        Invoke-RestMethod -Method GET -Uri $Uri 
-    }
+   if (($PSVersionTable.PSVersion.Major -le 5)) {
+      Invoke-RestMethod -Method GET -Uri $Uri 
+   }
 }
 
 
@@ -528,8 +528,111 @@ function Get-NbuVMwareCatalogImage {
 
     
    end {
+      $resp
+   }
+}
+
+
+
+
+
+
+
+
+function Get-NbuHost {
+   [CmdletBinding(DefaultParameterSetName = "HostId")]
+   param (
+      [Parameter(Mandatory = $false, ParameterSetName = "HostId", ValueFromPipelineByPropertyName = $true)][Alias("uuid")][string[]]$HostId,
+      [Parameter(Mandatory = $false, ParameterSetName = "HostName")][string]$HostName,
+      
+      [switch]$SkipCertificateCheck
+   )
+    
+   begin {
+      $Headers = @{
+         "content-type"  = "application/vnd.netbackup+json;version=1.0"
+         "Authorization" = $Global:NBUconnection.Token
+      }
+      [array]$resp = @()        
+   }
+    
+   process {
+      if ($PSCmdlet.ParameterSetName -eq "HostName") {
+         $Uri = $Global:NBUconnection.Server + "/config/hosts?name=$HostName"
+         if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+            $resp = Invoke-RestMethod -Uri $Uri -Method GET -Headers $Headers -SkipCertificateCheck
+         }
+         else {
+            $resp = Invoke-RestMethod -Uri $Uri -Method GET -Headers $Headers
+         }         
+      }
+
+      if ($PSCmdlet.ParameterSetName -eq "HostId") {
+          if ($HostId -eq $null) {$HostId = ""}
+         foreach ($Id in $HostId) {           
+          
+            $Uri = $Global:NBUconnection.Server + "/config/hosts/$Id"
+            if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+               $resp += Invoke-RestMethod -Uri $Uri -Method GET -Headers $Headers -SkipCertificateCheck
+            }
+            else {
+               $resp += Invoke-RestMethod -Uri $Uri -Method GET -Headers $Headers
+            }
+         }
+      }
+      
+   }
+    
+   end {
+      if (!($resp.hosts -eq $null)) { $resp.hosts }
+      else { $resp }
+   }
+}
+
+
+function New-NbuHost {
+   [CmdletBinding()]
+   param (
+      [Parameter(Mandatory = $true)][string]$HostName,
+        
+      [switch] $SkipCertificateCheck
+   )
+    
+   begin {
+      $Headers = @{
+         "content-type"  = "application/vnd.netbackup+json;version=1.0"
+         "Authorization" = $Global:NBUconnection.Token
+      }
+
+   }
+    
+   process {
+      $Uri = $Global:NBUconnection.Server + "/config/hosts"
+      $Body = @{
+         "hostName" = $HostName
+      } | ConvertTo-Json
+
+      if (($SkipCertificateCheck.IsPresent) -and ($PSVersionTable.PSVersion.Major -eq 6)) {
+         $resp = Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $body -SkipCertificateCheck
+      }
+      else {          
+         $resp = Invoke-RestMethod -Method POST -Uri $Uri -Headers $Headers -Body $body
+      }
+   }
+    
+   end {
        $resp
    }
 }
+
+
+
+
+
+
+
+
+
+ 
 
 
